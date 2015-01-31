@@ -32,6 +32,8 @@
 
 \usepackage{fancyhdr} % Custom headers and footers
 \pagestyle{fancyplain} % Makes all pages in the document conform to the custom headers and footers
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \fancyhead{} % No page header - if you want one, create it in the same way as the footers below
 \fancyfoot[L]{} % Empty left footer
 \fancyfoot[C]{} % Empty center footer
@@ -66,11 +68,49 @@
 
 \maketitle % Print the title
 
+\newpage
+
 \section{Introduction}
 
 \section{Single Level Analytical Models}
 \subsection{Assumptions}
-\subsection{Model}
+In this model there is only level of cache (L1) and there is no Register File in the architecture, so that the processor only operates on the data in memory, which obviously if it is present in L1 (Hit) it can be used directly and if it is not (Miss) it should be gathered first.\\
+Cache organization is considered to be a \textit{fully associative}, ideal \textit{LRU} replacement policy, with cache-line/blocks size of \textit{L} and total cache size is \textit{Z}.\\
+The analytical metric used here is the Arithmetic Intensity of the Matrix Multiplication. Basically, the multiplication algorithm is the well-known $O(N^{3})$ algorithm and in each step we are trying to optimize this procedure. Notice that, optimization can be done both on computation complexity and cache complexity of the algorithm, but here the main focus is to improve the cache complexity. 
+
+\subsection{Multiplication Models}
+
+\subsubsection{Baseline Matrix Multiplication Algorithm}
+As it is provided in the attachments of this report, baseline core computation of matrix multiply looks like below.\\
+
+\begin{algorithm}
+\caption{Baseline Matrix Multiplication}
+\label{Base-Alg}
+\begin{algorithmic}
+\For { $i = 0; i < N; i++ $ }
+	\For { $j = 0; j < N; j++ $ }
+		\State $C[ i ][ j ] = 0$;
+		\For { $k = 0; k < N; k++ $ }
+		\State $C[ i ][ j ] += A[ i ][ k ] \times B[ k ][ j ]$; 
+		\EndFor
+	\EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+By looking the Algorithm \ref{Base-Alg}, the asymptotic computation complexity could be figured out, which is $O(N^{3})$. However, since we need a more accurate metric here, we consider total number of arithmetic operations as $2N^{3}$  \footnote{ One $+$ and one $\times$.}. For this point on, since core of the computation is not changed, we consider number of operations to be the same.\\
+Now we focus on the cache complexity of the computation. If we start from the third loop (the most inner one), we can see there are three data access. However, between these three, hopefully $C[ i ][ j ]$ is almost always present in the cache. This statement is true because before entering this loop, $C[ i ][ j ]$ is cached and it will resident for this whole loop according to the replacement policy\footnote{Since every assignment in this loop is addressing $C[ i ][ j ]$ repeatedly, so LRU will not remove it from the cache.}.\\
+An important thing about the $A$ is, it is being traced in a row-major order, hence we can utilize the locality in each cache-line. Since each row of $A$ is $N$ words, it will require $\frac{N}{L}$ transfers of cache-lines.\\
+Matrix $B$ is being trace in the column-major in this algorithm and since we are considering matrixes to be large in comparison with cache-line and cache size, there is almost no chance to observe any locality between consecutive access. Therefor, in each iteration $B$ will experience almost $N$ misses.\\
+Putting it all together, $B$ will produce total number of $N^{3}$ and $A$ will produce $\frac{N^{3}}{L}$ misses. The important thing about $C$ is that it is being accessed in the second loop (the middle one) and begin traced in row-major order. Consequently, the total number of misses from $C$ would be $\frac{N^{2}}{L}$. Using the arithmetic intensity of the operations, we will get:
+\begin{equation*}
+\text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{N^{3}}{L} + {N^{3}} + \frac{N^{2}}{L} }
+\end{equation*}
+
+\subsubsection{Reordered Multiplication and Using Transposition}
+\subsubsection{Partitioning the Matrix to specified sub-matrixes}
+\subsubsection{Divide \& Conquer}
+
 \subsection{Graphs}
 \section{Model with Two-Level Cache Hierarchy}
 \subsection{Assumptions}
