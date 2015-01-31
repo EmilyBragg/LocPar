@@ -102,12 +102,77 @@ By looking the Algorithm \ref{Base-Alg}, the asymptotic computation complexity c
 Now we focus on the cache complexity of the computation. If we start from the third loop (the most inner one), we can see there are three data access. However, between these three, hopefully $C[ i ][ j ]$ is almost always present in the cache. This statement is true because before entering this loop, $C[ i ][ j ]$ is cached and it will resident for this whole loop according to the replacement policy\footnote{Since every assignment in this loop is addressing $C[ i ][ j ]$ repeatedly, so LRU will not remove it from the cache.}.\\
 An important thing about the $A$ is, it is being traced in a row-major order, hence we can utilize the locality in each cache-line. Since each row of $A$ is $N$ words, it will require $\frac{N}{L}$ transfers of cache-lines.\\
 Matrix $B$ is being trace in the column-major in this algorithm and since we are considering matrixes to be large in comparison with cache-line and cache size, there is almost no chance to observe any locality between consecutive access. Therefor, in each iteration $B$ will experience almost $N$ misses.\\
-Putting it all together, $B$ will produce total number of $N^{3}$ and $A$ will produce $\frac{N^{3}}{L}$ misses. The important thing about $C$ is that it is being accessed in the second loop (the middle one) and begin traced in row-major order. Consequently, the total number of misses from $C$ would be $\frac{N^{2}}{L}$. Using the arithmetic intensity of the operations, we will get:
+Putting it all together, $B$ will produce total number of $N^{3}$. However, $A$ will produce $\frac{N^{3}}{L}$ misses. Why? If we look closer to the access pattern of $B$ this accesses are re-writing the whole cache (with this assumption that $B$ is much larger than cache). Thus, although there is this opportunity of having \textit{Hits} from $A$ in the next iteration of middle loop, $B$'s access pattern removes these blocks. The important thing about $C$ is that it is being accessed in the second loop (the middle one) and begin traced in row-major order. Consequently, the total number of misses from $C$ would be $\frac{2N^{2}}{L}$. Using the arithmetic intensity of the operations, we will get:
 \begin{equation*}
-\text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{N^{3}}{L} + {N^{3}} + \frac{N^{2}}{L} }
+\text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{N^{3}}{L} + {N^{3}} + \frac{2N^{2}}{L} }
 \end{equation*}
 
 \subsubsection{Reordered Multiplication and Using Transposition}
+In the last part the main reason for losing benefits of locality in consecutive accesses of $B$ was its access pattern. As mentioned above, this matrix is being access in column-major, so every access brings a new cache-block to the cache which will be used only once. This part is about improving this behavior.\\
+As the first step, we can change the access pattern of B from column-major to row-major. By doing so, we can benefit from using all data words available in the cache-block brought into the cache in the previous iterations. This can simply done, by the following algorithm.\\
+
+\begin{algorithm}
+\caption{Matrix Multiplication with Reordering $B$ Accesses}
+\label{Reorder-Alg}
+\begin{algorithmic}
+\For { $i = 0; i < N; i++ $ }
+	\For { $k = 0; k < N; k++ $ }
+		\For { $j = 0; j < N; j++ $ }
+		\State $C[ i ][ j ] += A[ i ][ k ] \times B[ k ][ j ]$; 
+		\EndFor
+	\EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+What is being done in this algorithm is like this. Consider $A$, $B$, and $C$ as below.
+\begin{equation*}
+\begin{bmatrix}
+C_{00} & ... & C_{0(N-1)} \\
+ &...&\\
+C_{(N-1)0} & ... & C_{(N-1)(N-1)}
+\end{bmatrix} = 
+\begin{bmatrix}
+A_{00} & ... & A_{0(N-1)} \\
+ &...&\\
+A_{(N-1)0} & ... & A_{(N-1)(N-1)}
+\end{bmatrix} \times
+\begin{bmatrix}
+B_{00} & ... & B_{0(N-1)} \\
+ &...&\\
+B_{(N-1)0} & ... & B_{(N-1)(N-1)}
+\end{bmatrix}
+\end{equation*}
+
+Here, instead of producing each element of $C$, this algorithm tries to first produce partial multiplications of each element and then, in each step aggregates the values. For instance, one complete execution of the most inner loop (i.e. one iteration of middle loop), all of the first partial multiplications of first row of the $C$ is done.\\
+This approach is good and bad. This is good, because accesses to $B$ become very similar to accesses to $A$. In other words, accessing $B$ in row-major results in less number of misses when accessing $B$, which is $\frac{N^{3}}{L}$. And it also may help removing $A$ block from the cache, because there are less number of blocking coming in/out to cache, so for $A$ we have $\frac{N^{2}}{L}$.\\
+Although this reordering decreased number of $B$'s misses, but this can be harmful for $C$. Now, we have overhead on $C$. Why? Because computation of each element of $C$ is divided to many partial expressions which are being calculated/stored not necessarily on the same element/cache-block of $C$. In other words, when each of the $C$'s cache-lines are being fetched more than once\footnote{it is better to complete to whole operation on one cache-line instead of bringing back and forth.}. Thus, the inner loop on $C$ looks very similar to access patterns of $A$ and $B$, and produces total number of $\frac{2N^{3}}{L}$ misses (which means data movement). We can say:
+\begin{equation*}
+\text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{2N^{3}}{L} + \frac{N^{2}}{L} + \frac{N^{3}}{L} }
+\end{equation*}
+
+But still there is another idea, which instead of reordering the accesses to $B$, with some preprocess we can produce $B^{T}$. Using $B^{T}$ instead of $B$ and reordering the loops is another approach that can improve benefiting from the locality of $B$. Algorithm for this model using $B^{T}$ is like below.\\
+
+\begin{algorithm}
+\caption{Matrix Multiplication usint $B^{T}$}
+\label{Transpose-Alg}
+\begin{algorithmic}
+\For { $i = 0; i < N; i++ $ }
+	\For { $j = 0; j < N; j++ $ }
+		\State $C[ i ][ j ] = 0$;
+		\For { $k = 0; k < N; k++ $ }
+		\State $C[ i ][ j ] += A[ i ][ k ] \times B^{T}[ j ][ k ]$; 
+		\EndFor
+	\EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+Similarly, this algorithm has same access patterns for $A$ and $B$, however, it also benefits from the locality in $C$ access. So:
+\begin{equation*}
+\text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{2N^{2}}{L} + \frac{N^{2}}{L} + \frac{N^{3}}{L} }
+\end{equation*}
+
 \subsubsection{Partitioning the Matrix to specified sub-matrixes}
 \subsubsection{Divide \& Conquer}
 
