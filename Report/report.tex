@@ -53,7 +53,7 @@
 
 \title{	
 \normalfont \normalsize 
-\textsc{Locality and Parallelism} \\ [25pt] % Your university, school and/or department name(s)
+\textsc{Computer Architecture (Parallelism \& Locality) } \\ [25pt] % Your university, school and/or department name(s)
 \horrule{0.5pt} \\[0.4cm] % Thin top horizontal rule
 \huge Project 1.1 \\ % The assignment title
 \huge Analytical Models of Locality within Matrix Multiply Algorithms
@@ -70,7 +70,7 @@
 
 \newpage
 
-\section{Introduction}
+%\section{Introduction}
 
 \section{Single Level Analytical Models}
 \subsection{Assumptions}
@@ -106,6 +106,11 @@ Putting it all together, $B$ will produce total number of $N^{3}$. However, $A$ 
 \begin{equation*}
 \text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{N^{3}}{L} + {N^{3}} + \frac{2N^{2}}{L} }
 \end{equation*}
+
+In other words, for accesses of $A$ in the most inner loop from each $L$ number of accesses, $L-1$ of them is services by the first level of cache ( $(L-1) * \frac{N}{L}$ ). So in total, $(L-1) * \frac{N^{3}}{L}$ of accesses are serviced via L1 and $\frac{N^{3}}{L}$ of them are missed (initiating a new transfer between memory and L1).\\
+Obviously, since $B$'s access pattern is in column-major, it will not utilize its available locality so $0$.\\
+Finally for $C$, from each $L$ iterations of the middle loop, $L-1$ of are serviced via L1. So, cache effect would be $(L-1) * \frac{N^{2}}{L}$.\\
+This formulas make sense, since if we set $L = 1$ then number of useful accesses to L1 would be zero for all of them, which means we are completely loosing spatial locality. And making $L$ larger and larger, the limit would be total number of access, which is true and means we are utilizing the whole available spatial locality.
 
 \subsubsection{Reordered Multiplication and Using Transposition}
 In the last part the main reason for losing benefits of locality in consecutive accesses of $B$ was its access pattern. As mentioned above, this matrix is being access in column-major, so every access brings a new cache-block to the cache which will be used only once. This part is about improving this behavior.\\
@@ -154,7 +159,7 @@ Although this reordering decreased number of $B$'s misses, but this can be harmf
 But still there is another idea, which instead of reordering the accesses to $B$, with some preprocess we can produce $B^{T}$. Using $B^{T}$ instead of $B$ and reordering the loops is another approach that can improve benefiting from the locality of $B$. Algorithm for this model using $B^{T}$ is like below.\\
 
 \begin{algorithm}
-\caption{Matrix Multiplication usint $B^{T}$}
+\caption{Matrix Multiplication using $B^{T}$}
 \label{Transpose-Alg}
 \begin{algorithmic}
 \For { $i = 0; i < N; i++ $ }
@@ -173,8 +178,37 @@ Similarly, this algorithm has same access patterns for $A$ and $B$, however, it 
 \text{Arithmetic Intensity} = \frac{2N^{3}}{ \frac{2N^{2}}{L} + \frac{N^{2}}{L} + \frac{N^{3}}{L} }
 \end{equation*}
 
-\subsubsection{Partitioning the Matrix to specified sub-matrixes}
-\subsubsection{Divide \& Conquer}
+\newpage
+\subsubsection{Partitioning Matrixes and Divide\&Conquer (Cache aware and Cache Oblivious)  }
+If consider the case which all of the matrixes are small enough which cache can hold them all (i.e. $3N^{2} < Z$), then number of data transfers (so amount of cache block which is transferred between memory and cache) will be reduced. In this case, the arithmetic Intensity would be:
+\begin{equation*}
+\text{Arithmetic Intensity} = \frac{2N^{3}}{\frac{4N^{2}}{L}} (Hmm?)
+\end{equation*}
+
+Thus, having small matrixes (in comparison with cache size) can improve locality or more accurately can improve utilizing the available locality. Smaller Matrixes can remain cache while they are being processes, so there is no extra overhead on transferring data (which reduces the denominator). The first idea to utilize this property is dividing each matrix to smaller sub-blocks which can be stored in cache completely (assuming that we know the size of the cache). Algorithm for this model of computation is similar to the base model with this difference that is being executed on $n \times n$ matrixes (Algorithm \ref{Block-Alg}).\\
+
+\begin{algorithm}
+\caption{Matrix Multiplication with $n \times n$ blocks}
+\label{Block-Alg}
+\begin{algorithmic}
+\For { $I = 0; I < \frac{N}{n}; I++ $ }
+	\For { $J = 0; J < \frac{N}{n}; J++ $ }
+		\State $C_{IJ} = 0$;
+		\For { $K = 0; K < \frac{N}{n}; K++ $ }
+			\State $C_{IJ}$ += \text{MatMul( $A_{IK}$, $B_{KJ}$ )};
+		\EndFor
+	\EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+If we consider the size of the cache to be $Z$, $n \times n$ which can be completely stored in cache should have the property that $n < \sqrt{\frac{Z}{3}}$. Notice that, each of $C_{IJ}$, $A_{IK}$, and $B_{KJ}$ are chunks of original matrix and $+$ in the most inner loop is a Matrix Sum.\\
+Assuming that $n < \sqrt{\frac{Z}{3}}$, for computing each sub-matrix we consume $ \frac{N}{n} \times (2\times n^{2})$ operations, which in total that would be $\frac{N}{n} \times (2\times n^{2}) \times (\frac{N}{n})^{2} = \frac{2N^{3}}{n}$. Using our assumption we have $\frac{2N^{3}}{\sqrt{\frac{Z}{3}}}$.\\
+Number of data transfers (which directly depends on number of cache misses) in this model can be calculated as follow.  For each iteration of the middle loop we have:  1. Gathering $C_{IJ}$, which is $n^{2}$,  2. Gathering $A_{IK}$ and $B_{KJ}$ each of them for $\frac{N}{n}$ times. Hence, number of data transfers for the middle loop would be $2n^{2} + 2 \times \frac{N}{n} \times n^{2}$. This happens for $(\frac{N}{n})^{2}$, so $(\frac{N}{n})^{2} \times (2n^{2} + 2 \times \frac{N}{n} \times n^{2}) = 2N^{2} + \frac{2N^{3}}{n} = 2N^{2} + \frac{2N^{3}}{\sqrt{\frac{Z}{3}}}$.
+\begin{equation*}
+\text{Arithmetic Intensity} = \frac{\frac{N^{3}}{\sqrt{\frac{Z}{3}}}}{N^{2} + \frac{N^{3}}{\sqrt{\frac{Z}{3}}}}
+\end{equation*}
+As you can see, assumption here is based on the size of cache $Z$. However, we can go further and also eliminate this assumption (Cache Oblivious). We can do so, if we divide matrixes repeatedly to finer block. Obviously from some point on, we will pass the unknown cache size and every variable would be accessible from cache. This leads us to the Divide\&Conquer model which divides matrixes until it reaches some base case. Notice that, after passing the cache size further divisions does not have any impact.\\
 
 \subsection{Graphs}
 \section{Model with Two-Level Cache Hierarchy}
